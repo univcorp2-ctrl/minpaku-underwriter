@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "minpaku-underwriter"
+version = "0.1.0"
+description = "Evidence-weighted short-term-rental underwriting for Japan"
+requires-python = ">=3.11"
+dependencies = [
+  "matplotlib>=3.9",
+  "numpy>=2.0",
+  "pandas>=2.2",
+  "pydantic>=2.8",
+  "PyYAML>=6.0",
+  "requests>=2.32",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2", "ruff>=0.6"]
+
+[project.scripts]
+minpaku-underwriter = "minpaku_underwriter.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/minpaku_underwriter"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
