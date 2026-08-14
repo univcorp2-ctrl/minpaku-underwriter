@@ -1,0 +1,47 @@
+[
+  {
+    "code": "TA5088",
+    "address": "東京都世田谷区南烏山6丁目29-9",
+    "nearest_station": "千歳烏山",
+    "walk_minutes": 5,
+    "monthly_rent_yen": 143000,
+    "monthly_management_yen": 11000,
+    "initial_investment_yen": 900000,
+    "sqm": 32.2,
+    "layout": "1DK",
+    "bedrooms": 1,
+    "accommodates": 3,
+    "build_year": 1987,
+    "legal_mode": "unknown"
+  },
+  {
+    "code": "TA5092",
+    "address": "東京都杉並区上井草3丁目32-7",
+    "nearest_station": "上井草",
+    "walk_minutes": 1,
+    "monthly_rent_yen": 108900,
+    "monthly_management_yen": 9900,
+    "initial_investment_yen": 850000,
+    "sqm": 37.8,
+    "layout": "1LDK",
+    "bedrooms": 1,
+    "accommodates": 4,
+    "build_year": 1974,
+    "legal_mode": "unknown"
+  },
+  {
+    "code": "TA5091",
+    "address": "東京都新宿区若松町36-15",
+    "nearest_station": "早稲田",
+    "walk_minutes": 6,
+    "monthly_rent_yen": 118800,
+    "monthly_management_yen": 11000,
+    "initial_investment_yen": 750000,
+    "sqm": 17.34,
+    "layout": "studio/shop-office",
+    "bedrooms": 0,
+    "accommodates": 2,
+    "build_year": 1996,
+    "legal_mode": "unknown"
+  }
+]
