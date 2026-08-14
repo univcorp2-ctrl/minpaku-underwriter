@@ -47,7 +47,8 @@ class InsideAirbnbTokyo:
 
     def discover_dates(self) -> list[str]:
         html = requests.get(DATA_PAGE, headers={"User-Agent": UA}, timeout=30).text
-        pattern = rf"{re.escape(TOKYO_PATH)}/(\d{{4}}-\d{{2}}-\d{{2}})/data/listings\.csv\.gz"
+        # The stable suffix avoids charset differences in the `kantō` path segment.
+        pattern = r"/tokyo/(\d{4}-\d{2}-\d{2})/data/listings\.csv\.gz"
         return sorted(set(re.findall(pattern, html)), reverse=True)
 
     def _url(self, snapshot_date: str, kind: str) -> str:
