@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "airbnb": {
+      "command": "npx",
+      "args": ["-y", "@openbnb/mcp-server-airbnb"]
+    }
+  },
+  "notes": [
+    "OpenBnB is an unofficial MIT-licensed MCP for current search/details, not a historical booking ledger.",
+    "Keep robots.txt compliance enabled; do not use the ignore-robots option in production analysis.",
+    "Use its output as a live-market feature/cross-check, never as sole proof of occupancy."
+  ]
+}
