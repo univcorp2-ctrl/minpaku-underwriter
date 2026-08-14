@@ -42,11 +42,20 @@ def analyze(
             target.bedrooms,
             target.accommodates,
             radius_km=radius_km,
+            as_of=snapshot.snapshot_date,
         )
-        history = provider.review_occupancy_history(comps, snapshot.reviews, months=months)
+        history = provider.review_occupancy_history(
+            comps,
+            snapshot.reviews,
+            months=months,
+            as_of=snapshot.snapshot_date,
+        )
         result = forecast_from_history(target, history)
         json_path, png_path = save_report(target, result, out)
-        typer.echo(f"{target.code}: grade={result.grade} score={result.score:.1f} comps={result.comp_count}")
+        typer.echo(
+            f"{target.code}: grade={result.grade} "
+            f"score={result.score:.1f} comps={result.comp_count}"
+        )
         typer.echo(f"  {json_path}\n  {png_path}")
 
 
