@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import pandas as pd
 
@@ -11,8 +9,9 @@ from .models import ForecastResult, PropertyInput
 def _bounded_adjustment(base: float, target: PropertyInput) -> float:
     factor = 1.0
     if target.walk_minutes is not None:
-        # Small bounded heuristic until learned coefficients are available.
-        factor *= float(np.clip(1.04 - 0.008 * max(target.walk_minutes - 3, 0), 0.88, 1.04))
+        factor *= float(
+            np.clip(1.04 - 0.008 * max(target.walk_minutes - 3, 0), 0.88, 1.04)
+        )
     if target.design_score is not None:
         factor *= float(np.clip(0.90 + 0.002 * target.design_score, 0.90, 1.10))
     return float(np.clip(base * factor, 0.02, 0.95))
@@ -49,7 +48,12 @@ def forecast_from_history(target: PropertyInput, history: pd.DataFrame) -> Forec
         raise ValueError("history is empty")
     recent = history.tail(min(24, len(history))).copy()
     occ_mean_raw = float(recent["occupancy_mean"].mean())
-    occ_std = float(np.sqrt(np.nanmean(np.square(recent["occupancy_std"].fillna(0))) + np.nanvar(recent["occupancy_mean"])))
+    occ_std = float(
+        np.sqrt(
+            np.nanmean(np.square(recent["occupancy_std"].fillna(0)))
+            + np.nanvar(recent["occupancy_mean"])
+        )
+    )
     occ_p50_raw = float(recent["occupancy_p50"].median())
     occ_p10_raw = float(recent["occupancy_p10"].median())
     occ_p90_raw = float(recent["occupancy_p90"].median())
@@ -63,7 +67,6 @@ def forecast_from_history(target: PropertyInput, history: pd.DataFrame) -> Forec
     if adr_series.empty:
         raise ValueError("No ADR proxy available")
     adr_p50 = float(adr_series.median())
-    # Free mode has no realized historical ADR, so deliberately widen the interval.
     adr_p10 = float(max(1000, adr_p50 * 0.72))
     adr_p90 = float(adr_p50 * 1.28)
 
@@ -71,18 +74,40 @@ def forecast_from_history(target: PropertyInput, history: pd.DataFrame) -> Forec
     gross50 = _annual_gross(occ_p50, adr_p50, target)
     gross90 = _annual_gross(occ_p90, adr_p90, target)
     cash50 = _cashflow(gross50, target)
-    roi = cash50 / target.initial_investment_yen if target.initial_investment_yen > 0 else None
+    roi = (
+        cash50 / target.initial_investment_yen
+        if target.initial_investment_yen > 0
+        else None
+    )
     monthly_cash = cash50 / 12
-    payback = target.initial_investment_yen / monthly_cash if target.initial_investment_yen > 0 and monthly_cash > 0 else None
+    payback = (
+        target.initial_investment_yen / monthly_cash
+        if target.initial_investment_yen > 0 and monthly_cash > 0
+        else None
+    )
 
     comp_count = int(recent["comp_count"].median())
     sample_score = min(100.0, comp_count / 50 * 100)
     econ_margin = cash50 / max(target.monthly_fixed_yen * 12, 1)
     econ_score = float(np.clip(50 + econ_margin * 70, 0, 100))
-    demand_score = float(np.clip((occ_p50 / 0.70) * 70 + min(adr_p50 / 30000, 1) * 30, 0, 100))
+    demand_score = float(
+        np.clip((occ_p50 / 0.70) * 70 + min(adr_p50 / 30000, 1) * 30, 0, 100)
+    )
     legal_score = 70 if target.legal_mode != "unknown" else 35
-    confidence = float(np.clip(0.30 + min(comp_count, 50) / 100 + min(len(recent), 24) / 120, 0, 0.78))
-    score = 0.35 * econ_score + 0.25 * demand_score + 0.15 * sample_score + 0.15 * legal_score + 0.10 * 50
+    confidence = float(
+        np.clip(
+            0.30 + min(comp_count, 50) / 100 + min(len(recent), 24) / 120,
+            0,
+            0.78,
+        )
+    )
+    score = (
+        0.35 * econ_score
+        + 0.25 * demand_score
+        + 0.15 * sample_score
+        + 0.15 * legal_score
+        + 0.10 * 50
+    )
 
     hard_stop = cash50 < 0
     reasons = [
@@ -97,11 +122,16 @@ def forecast_from_history(target: PropertyInput, history: pd.DataFrame) -> Forec
     ]
     unknowns = []
     if target.legal_mode == "unknown":
-        unknowns.append("Operating permit route is not verified (Housing Accommodation Business Act vs Hotel Business Act).")
+        unknowns.append(
+            "Operating permit route is not verified "
+            "(Housing Accommodation Business Act vs Hotel Business Act)."
+        )
     if target.annual_sellable_nights is None:
         unknowns.append("Lawful annual sellable nights are not fixed in the input.")
     if target.initial_investment_yen <= 0:
-        unknowns.append("Initial investment is zero/unknown, so ROI/payback is not calculated.")
+        unknowns.append(
+            "Initial investment is zero/unknown, so ROI/payback is not calculated."
+        )
 
     return ForecastResult(
         code=target.code,
