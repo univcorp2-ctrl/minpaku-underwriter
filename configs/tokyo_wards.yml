@@ -1,0 +1,19 @@
+verified_at: '2026-08-14'
+source_note: 'Always re-check official ward pages before contract execution.'
+wards:
+  shinjuku:
+    official_url: 'https://www.city.shinjuku.lg.jp/kenkou/eisei03_002086.html'
+    housing_act_national_cap_days: 180
+    notes:
+      - 'Residential-exclusive zones have local operating restrictions; determine zoning from official GIS.'
+      - 'Owner/manager, fire-safety, and prior-neighbor-notice requirements must be checked.'
+  suginami:
+    official_url: 'https://www.city.suginami.tokyo.jp/s046/871.html'
+    housing_act_national_cap_days: 180
+    notes:
+      - 'Local weekday restrictions can apply, especially to host-absent operation in residential-exclusive zones.'
+  setagaya:
+    official_url: 'https://www.city.setagaya.lg.jp/02245/3247.html'
+    housing_act_national_cap_days: 180
+    notes:
+      - 'Local weekday restrictions can materially reduce sellable nights in residential-exclusive zones.'
