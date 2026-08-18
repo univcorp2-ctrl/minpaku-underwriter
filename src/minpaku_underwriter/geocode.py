@@ -5,7 +5,25 @@ from typing import Any
 
 import requests
 
-UA = "minpaku-underwriter/0.1 (research; respectful public geocoding usage)"
+UA = "minpaku-underwriter/1.0 (research; respectful public geocoding usage)"
+
+
+def _gsi(address: str, timeout: int = 20) -> tuple[float, float] | None:
+    r = requests.get(
+        "https://msearch.gsi.go.jp/address-search/AddressSearch",
+        params={"q": address},
+        headers={"User-Agent": UA},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    rows = r.json()
+    if not isinstance(rows, list) or not rows:
+        return None
+    coordinates = rows[0].get("geometry", {}).get("coordinates", [])
+    if len(coordinates) < 2:
+        return None
+    lon, lat = coordinates[:2]
+    return float(lat), float(lon)
 
 
 def _photon(address: str, timeout: int = 20) -> tuple[float, float] | None:
@@ -39,7 +57,7 @@ def _nominatim(address: str, timeout: int = 20) -> tuple[float, float] | None:
 
 
 def geocode_address(address: str) -> tuple[float, float]:
-    for fn in (_photon, _nominatim):
+    for fn in (_gsi, _photon, _nominatim):
         try:
             result = fn(address)
             if result:
