@@ -18,6 +18,28 @@ export async function onRequestPost(context) {
   if (!address) return json({ error: "address_required" }, 400);
 
   const headers = { "User-Agent": "minpaku-underwriter/1.0" };
+
+  // Japan-first: GSI's address search handles Japanese block/house notation far
+  // better than global geocoders for the addresses this product underwrites.
+  try {
+    const gsi = new URL("https://msearch.gsi.go.jp/address-search/AddressSearch");
+    gsi.searchParams.set("q", address);
+    const response = await fetch(gsi.toString(), { headers });
+    if (response.ok) {
+      const data = await response.json();
+      const feature = Array.isArray(data) ? data[0] : null;
+      if (feature?.geometry?.coordinates?.length >= 2) {
+        const [lon, lat] = feature.geometry.coordinates;
+        return json({
+          lat: Number(lat),
+          lon: Number(lon),
+          provider: "gsi",
+          matched_address: feature.properties?.title || null,
+        });
+      }
+    }
+  } catch {}
+
   try {
     const photon = new URL("https://photon.komoot.io/api/");
     photon.searchParams.set("q", address);
@@ -42,7 +64,11 @@ export async function onRequestPost(context) {
     if (response.ok) {
       const data = await response.json();
       if (data[0]) {
-        return json({ lat: Number(data[0].lat), lon: Number(data[0].lon), provider: "nominatim" });
+        return json({
+          lat: Number(data[0].lat),
+          lon: Number(data[0].lon),
+          provider: "nominatim",
+        });
       }
     }
   } catch {}
