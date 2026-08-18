@@ -1,29 +1,42 @@
 from __future__ import annotations
 
 import calendar
+import io
 import json
 import math
+import re
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import requests
 
-from minpaku_underwriter.inside_airbnb import InsideAirbnbTokyo, _money
+from minpaku_underwriter.inside_airbnb import InsideAirbnbTokyo
 
 OUT = Path("web/data/tokyo_market.json")
-MONTHS = 36
+MONTHS = 60
 CELL_DEG = 0.01
 REVIEW_RATE = 0.50
 DEFAULT_STAY = 3.0
 OCC_CAP = 0.70
 MIN_CELL_LISTINGS = 5
+UA = "minpaku-underwriter/1.0"
+TOKYO_PATH = "japan/kant%C5%8D/tokyo"
+
+
+def money(value: object) -> float:
+    text = re.sub(r"[^0-9.\-]", "", str(value or ""))
+    return float(text) if text else float("nan")
 
 
 def bed_bucket(value: object) -> str:
     try:
-        n = int(round(float(value)))
+        x = float(value)
+        if math.isnan(x):
+            return "unknown"
+        n = int(round(x))
     except (TypeError, ValueError):
-        return "all"
+        return "unknown"
     if n <= 0:
         return "0"
     if n == 1:
@@ -83,47 +96,78 @@ def rounded(value: object, digits: int = 3) -> float | None:
     return round(x, digits)
 
 
+def fetch_csv(url: str, *, compression: str | None = None, usecols: list[str]) -> pd.DataFrame:
+    response = requests.get(url, headers={"User-Agent": UA}, timeout=240)
+    response.raise_for_status()
+    return pd.read_csv(
+        io.BytesIO(response.content),
+        compression=compression,
+        usecols=usecols,
+        low_memory=False,
+    )
+
+
 def main() -> None:
     provider = InsideAirbnbTokyo()
     dates = provider.discover_dates()
     if not dates:
         raise RuntimeError("No Tokyo Inside Airbnb snapshot discovered")
     snapshot_date = dates[0]
-    snap = provider.load_snapshot(snapshot_date=snapshot_date, include_calendar=False)
+    base = f"https://data.insideairbnb.com/{TOKYO_PATH}/{snapshot_date}"
 
-    listings = snap.listings.copy()
-    required = {"id", "latitude", "longitude", "room_type", "price"}
-    missing = required - set(listings.columns)
-    if missing:
-        raise RuntimeError(f"Missing listing columns: {sorted(missing)}")
+    listing_cols = [
+        "id",
+        "name",
+        "latitude",
+        "longitude",
+        "room_type",
+        "price",
+        "minimum_nights",
+        "bedrooms",
+        "accommodates",
+        "first_review",
+        "reviews_per_month",
+        "number_of_reviews_ltm",
+    ]
+    listings = fetch_csv(
+        f"{base}/data/listings.csv.gz",
+        compression="gzip",
+        usecols=listing_cols,
+    )
+    reviews = fetch_csv(
+        f"{base}/visualisations/reviews.csv",
+        usecols=["listing_id", "date"],
+    )
 
     listings = listings[listings["room_type"].eq("Entire home/apt")].copy()
     listings["latitude"] = pd.to_numeric(listings["latitude"], errors="coerce")
     listings["longitude"] = pd.to_numeric(listings["longitude"], errors="coerce")
-    listings["price_yen"] = listings["price"].map(_money)
+    listings["price_yen"] = listings["price"].map(money)
     listings["minimum_nights_num"] = pd.to_numeric(
-        listings.get("minimum_nights", DEFAULT_STAY), errors="coerce"
+        listings["minimum_nights"], errors="coerce"
     ).fillna(DEFAULT_STAY)
     listings["minimum_nights_num"] = listings["minimum_nights_num"].clip(1, 30)
-    listings["bed_bucket"] = listings.get(
-        "bedrooms", pd.Series(index=listings.index, dtype=float)
-    ).map(bed_bucket)
+    listings["bed_bucket"] = listings["bedrooms"].map(bed_bucket)
     listings["first_review_date"] = pd.to_datetime(
-        listings.get("first_review", pd.NaT), errors="coerce"
+        listings["first_review"], errors="coerce"
     )
     listings["reviews_per_month_num"] = pd.to_numeric(
-        listings.get("reviews_per_month", 0), errors="coerce"
+        listings["reviews_per_month"], errors="coerce"
     ).fillna(0)
     listings["number_of_reviews_ltm_num"] = pd.to_numeric(
-        listings.get("number_of_reviews_ltm", 0), errors="coerce"
+        listings["number_of_reviews_ltm"], errors="coerce"
     ).fillna(0)
     listings = listings.dropna(subset=["latitude", "longitude", "price_yen"])
-    listings = listings[(listings["price_yen"] >= 2500) & (listings["price_yen"] <= 250000)]
+    listings = listings[
+        (listings["price_yen"] >= 2500) & (listings["price_yen"] <= 250000)
+    ]
 
     listings["cell_lat_idx"] = np.floor(listings["latitude"] / CELL_DEG).astype(int)
     listings["cell_lon_idx"] = np.floor(listings["longitude"] / CELL_DEG).astype(int)
     listings["cell_key"] = (
-        listings["cell_lat_idx"].astype(str) + ":" + listings["cell_lon_idx"].astype(str)
+        listings["cell_lat_idx"].astype(str)
+        + ":"
+        + listings["cell_lon_idx"].astype(str)
     )
     listings["cell_lat"] = (listings["cell_lat_idx"] + 0.5) * CELL_DEG
     listings["cell_lon"] = (listings["cell_lon_idx"] + 0.5) * CELL_DEG
@@ -133,13 +177,13 @@ def main() -> None:
     start_month = end_month - (MONTHS - 1)
     months = pd.period_range(start_month, end_month, freq="M")
 
-    rv = snap.reviews[["listing_id", "date"]].copy()
+    rv = reviews.copy()
     rv["listing_id"] = pd.to_numeric(rv["listing_id"], errors="coerce")
     rv["date"] = pd.to_datetime(rv["date"], errors="coerce")
     rv = rv.dropna(subset=["listing_id", "date"])
     rv["listing_id"] = rv["listing_id"].astype("int64")
     rv["month"] = rv["date"].dt.to_period("M")
-    active_ids = set(pd.to_numeric(listings["id"], errors="coerce").dropna().astype("int64"))
+    active_ids = set(pd.to_numeric(listings["id"], errors="coerce").astype("int64"))
     rv = rv[
         rv["listing_id"].isin(active_ids)
         & (rv["month"] >= start_month)
@@ -173,7 +217,9 @@ def main() -> None:
     grid = grid[existed].copy()
     grid["stay"] = np.maximum(grid["minimum_nights_num"], DEFAULT_STAY)
     grid["estimated_nights"] = grid["reviews"] / REVIEW_RATE * grid["stay"]
-    grid["days"] = grid["month"].map(lambda p: calendar.monthrange(p.year, p.month)[1])
+    grid["days"] = grid["month"].map(
+        lambda period: calendar.monthrange(period.year, period.month)[1]
+    )
     grid["occupancy"] = (grid["estimated_nights"] / grid["days"]).clip(0, OCC_CAP)
 
     hist_all = history_stats(grid, ["cell_key", "month"])
@@ -186,7 +232,11 @@ def main() -> None:
     price_bed = price_stats(listings, ["cell_key", "bed_bucket"])
     prices = pd.concat([price_all, price_bed], ignore_index=True)
 
-    coords = listings.groupby("cell_key")[["cell_lat", "cell_lon"]].first().reset_index()
+    coords = (
+        listings.groupby("cell_key")[["cell_lat", "cell_lon"]]
+        .first()
+        .reset_index()
+    )
     history = history.merge(coords, on="cell_key", how="left")
     history = history.merge(prices, on=["cell_key", "bed_bucket"], how="left")
     history = history[history["listing_count"].fillna(0) >= MIN_CELL_LISTINGS]
@@ -200,25 +250,28 @@ def main() -> None:
     for key, group in top.groupby("cell_key"):
         examples: list[dict[str, object]] = []
         for _, row in group.iterrows():
-            item = {
-                "id": int(row["id"]),
-                "name": str(row.get("name") or "Airbnb listing")[:90],
-                "lat": rounded(row["latitude"], 5),
-                "lon": rounded(row["longitude"], 5),
-                "price": rounded(row["price_yen"], 0),
-                "bedrooms": rounded(row.get("bedrooms"), 0),
-                "accommodates": rounded(row.get("accommodates"), 0),
-                "reviews_per_month": rounded(row.get("reviews_per_month_num"), 2),
-                "reviews_ltm": rounded(row.get("number_of_reviews_ltm_num"), 0),
-            }
-            examples.append(item)
+            examples.append(
+                {
+                    "id": int(row["id"]),
+                    "name": str(row["name"] or "Airbnb listing")[:90],
+                    "lat": rounded(row["latitude"], 5),
+                    "lon": rounded(row["longitude"], 5),
+                    "price": rounded(row["price_yen"], 0),
+                    "bedrooms": rounded(row["bedrooms"], 0),
+                    "accommodates": rounded(row["accommodates"], 0),
+                    "reviews_per_month": rounded(row["reviews_per_month_num"], 2),
+                    "reviews_ltm": rounded(row["number_of_reviews_ltm_num"], 0),
+                }
+            )
         comp_map[str(key)] = examples
 
     cells: list[dict[str, object]] = []
-    grouped = history.sort_values("month").groupby(["cell_key", "bed_bucket"], sort=False)
+    grouped = history.sort_values("month").groupby(
+        ["cell_key", "bed_bucket"], sort=False
+    )
     for (cell_key, bucket), group in grouped:
         latest = group.iloc[-1]
-        cell = {
+        cell: dict[str, object] = {
             "key": str(cell_key),
             "bed": str(bucket),
             "lat": rounded(latest["cell_lat"], 5),
@@ -247,7 +300,7 @@ def main() -> None:
         cells.append(cell)
 
     payload = {
-        "schema": 1,
+        "schema": 2,
         "market": "Tokyo",
         "snapshot": snapshot_date,
         "generated_at": pd.Timestamp.utcnow().isoformat(),
@@ -259,14 +312,20 @@ def main() -> None:
             "default_stay_nights": DEFAULT_STAY,
             "occupancy_cap": OCC_CAP,
             "adr": "Current listing-price proxy; not historical realized ADR",
-            "warning": "Public Airbnb data cannot distinguish true bookings from all host-blocked dates; occupancy is estimated, not a booking ledger.",
+            "warning": "Public data does not expose a competitor booking ledger; occupancy is an estimate and historical ADR is not directly observed.",
         },
         "cells": cells,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    OUT.write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
     size_mb = OUT.stat().st_size / 1024 / 1024
-    print(f"wrote {OUT}: {len(cells)} segments, {size_mb:.2f} MiB, snapshot={snapshot_date}")
+    print(
+        f"wrote {OUT}: {len(cells)} segments, {size_mb:.2f} MiB, "
+        f"snapshot={snapshot_date}"
+    )
 
 
 if __name__ == "__main__":
